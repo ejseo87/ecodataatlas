@@ -1,1 +1,7 @@
+#include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.release.xcconfig"
+#include? "Pods/Target Support Files/Pods-Runner/Pods-Runner.profile.xcconfig"
 #include "Generated.xcconfig"
+// Disable code signing to avoid signing embedded frameworks on simulator builds
+CODE_SIGNING_ALLOWED=NO
+CODE_SIGNING_REQUIRED=NO
+EXPANDED_CODE_SIGN_IDENTITY=
