@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'api_services/api_worldbank/views/country_indicators_screen.dart';
 
 void main() {
   runApp(const EcoDataAtlasApp());
@@ -15,7 +16,7 @@ class EcoDataAtlasApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: Scaffold(body: Column(children: [Text('EcoDataAtlas')])),
+      home: const CountryIndicatorsScreen(),
     );
   }
 }
