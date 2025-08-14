@@ -1,0 +1,171 @@
+import 'dart:convert';
+import 'dart:math' as math;
+import 'package:dio/dio.dart';
+import 'package:hive/hive.dart';
+import 'package:path_provider/`path_provider`.dart';
+
+class WorldBankApi {
+  static const _base = 'https://api.worldbank.org/v2';
+  final Dio _dio;
+
+  WorldBankApi({Dio? dio})
+    : _dio =
+          dio ?? Dio(BaseOptions(connectTimeout: const Duration(seconds: 10)));
+
+  /// 앱 시작 시 한 번 호출 (Hive 초기화)
+  static Future<void> initHive() async {
+    final dir = await getApplicationDocumentsDirectory();
+    Hive.init(dir.path);
+    if (!Hive.isBoxOpen('wb_cache')) {
+      await Hive.openBox('wb_cache');
+    }
+  }
+
+  /// 캐시 TTL (예: 12시간)
+  static const _cacheTtl = Duration(hours: 12);
+
+  /// OECD 38개국 데이터 대량 수집
+  ///
+  /// [indicator] 예: 'NY.GDP.PCAP.KD.ZG' (실질 1인당 GDP 성장률)
+  /// [date]      예: '1990:2023' 또는 단일연도 '2023'
+  /// [frequency] 'A' (연간) 기본
+  ///
+  /// 반환: 정렬된 시계열 포인트 집합
+  Future<List<WbIndicatorPoint>> fetchIndicatorForOecd({
+    required String indicator,
+    String date = '1990:2025',
+    String frequency = 'A',
+    int perPage = 1000,
+  }) async {
+    // 국가들을 세미콜론으로 묶어 한 번에
+    final countries = oecd38.join(';');
+
+    // World Bank: /country/{codes}/indicator/{id}
+    final url =
+        '$_base/country/$countries/indicator/$indicator?format=json&per_page=$perPage&date=$date&frequency=$frequency';
+
+    // 1) 캐시 체크
+    final cached = await _getCache(url);
+    if (cached != null) {
+      return _parseAllPages(cached);
+    }
+
+    // 2) 네트워크 (페이징 루프 + 재시도)
+    final pagesData = <List<dynamic>>[];
+    int page = 1;
+    int totalPages = 1; // 먼저 1로 두고, 첫 호출 후 실제 페이지 수 반영
+
+    while (page <= totalPages) {
+      final pageUrl = '$url&page=$page';
+      final body = await _getWithRetry(pageUrl);
+      final decoded = jsonDecode(body);
+
+      if (decoded is! List || decoded.length < 2) {
+        // 형식이 다르면 종료
+        break;
+      }
+
+      final meta = decoded[0] as Map<String, dynamic>;
+      final data = decoded[1] as List<dynamic>;
+      pagesData.add(data);
+
+      totalPages = int.tryParse(meta['pages']?.toString() ?? '1') ?? 1;
+      page++;
+    }
+
+    // 3) 캐시에 저장
+    await _setCache(
+      url,
+      jsonEncode([
+        // 캐시에 meta는 안 합치고, data만 이어붙여 저장할게요.
+        // 재파싱 편의상 [ { "dummy":"meta" }, [ ...all-items... ] ] 구조로 맞춰둡니다.
+        {"meta": "combined"},
+        pagesData.expand((e) => e).toList(),
+      ]),
+    );
+
+    // 4) 파싱
+    return _parseAllPages(
+      jsonEncode([
+        {"meta": "combined"},
+        pagesData.expand((e) => e).toList(),
+      ]),
+    );
+  }
+
+  Future<String> _getWithRetry(String url) async {
+    final maxAttempts = 5;
+    int attempt = 0;
+    DioException? lastErr;
+
+    while (attempt < maxAttempts) {
+      try {
+        final resp = await _dio.get<String>(url);
+        if (resp.statusCode == 200 && resp.data != null) {
+          return resp.data!;
+        }
+
+        // 소프트 에러 → 재시도
+        throw DioException(
+          requestOptions: resp.requestOptions,
+          response: resp,
+          type: DioExceptionType.badResponse,
+        );
+      } on DioException catch (e) {
+        lastErr = e;
+        final status = e.response?.statusCode ?? 0;
+
+        // 4xx 중 429만 재시도, 5xx는 재시도
+        final shouldRetry =
+            status == 429 ||
+            (status >= 500 && status <= 599) ||
+            e.type == DioExceptionType.connectionTimeout ||
+            e.type == DioExceptionType.receiveTimeout;
+
+        if (!shouldRetry) break;
+
+        attempt++;
+        final backoff = math.pow(2, attempt).toInt(); // 2,4,8,16,32초
+        await Future.delayed(Duration(seconds: backoff));
+      }
+    }
+    throw lastErr ?? Exception('Unknown network error');
+  }
+
+  List<WbIndicatorPoint> _parseAllPages(String storedBody) {
+    final decoded = jsonDecode(storedBody);
+    final data = decoded[1] as List<dynamic>;
+    final points = data
+        .map((e) => WbIndicatorPoint.fromJson(e as Map<String, dynamic>))
+        .toList();
+
+    // 연도 최신 우선 정렬(필요 시 변경)
+    points.sort((a, b) {
+      final c = (b.year ?? -1).compareTo(a.year ?? -1);
+      if (c != 0) return c;
+      return a.countryIso3.compareTo(b.countryIso3);
+    });
+    return points;
+  }
+
+  Future<String?> _getCache(String key) async {
+    final box = Hive.box('wb_cache');
+    final item = box.get(key) as Map?;
+    if (item == null) return null;
+
+    final savedAt = DateTime.tryParse(item['ts']?.toString() ?? '');
+    if (savedAt == null) return null;
+
+    if (DateTime.now().difference(savedAt) > _cacheTtl) {
+      // 만료 시 삭제
+      await box.delete(key);
+      return null;
+    }
+    return item['body']?.toString();
+  }
+
+  Future<void> _setCache(String key, String body) async {
+    final box = Hive.box('wb_cache');
+    await box.put(key, {'ts': DateTime.now().toIso8601String(), 'body': body});
+  }
+}

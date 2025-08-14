@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "671810020999",
+    "project_id": "ecodataatlas",
+    "storage_bucket": "ecodataatlas.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:671810020999:android:b39b74dbaeb8a35a793a22",
+        "android_client_info": {
+          "package_name": "com.example.ecodata_atlas"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC3vVQJANMj7ERg6XIA-LJR8zZ3Vs2EQkM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:671810020999:android:bea0b6f0c23941a5793a22",
+        "android_client_info": {
+          "package_name": "com.example.ecodataatlas"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC3vVQJANMj7ERg6XIA-LJR8zZ3Vs2EQkM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
